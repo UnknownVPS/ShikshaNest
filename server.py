@@ -2,27 +2,6 @@
 import socket
 import pygame
 import pickle
-from itertools import tee
-
-def interpolate_points(points):
-    def pairwise(iterable):
-        "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-        a, b = tee(iterable)
-        next(b, None)
-        return zip(a, b)
-    
-    interpolated = []
-    for (x0, y0), (x1, y1) in pairwise(points):
-        interpolated.append((x0, y0))
-        steps = max(abs(x1 - x0), abs(y1 - y0))
-        if steps == 0:
-            continue
-        for step in range(1, int(steps)):
-            x = x0 + (x1 - x0) * step / steps
-            y = y0 + (y1 - y0) * step / steps
-            interpolated.append((x, y))
-    interpolated.append(points[-1])
-    return interpolated
 
 # Initialize pygame
 pygame.init()
@@ -49,9 +28,8 @@ while running:
 
     try:
         positions = pickle.loads(data)
-        if len(positions) > 1:
-            smoothed_positions = interpolate_points(positions)
-            pygame.draw.lines(screen, (255, 255, 255), False, smoothed_positions, 5)
+        for pos in positions:
+            pygame.draw.circle(screen, (255, 255, 255), pos, 5)
     except pickle.PickleError:
         continue
 
