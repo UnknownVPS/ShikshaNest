@@ -1,67 +1,52 @@
-# annotate_client.py
-from kivy.app import App
-from kivy.uix.label import Label
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.widget import Widget
-from kivy.uix.button import Button
+# main.py
 import socket
-import threading
+import pickle
+from kivy.app import App
+from kivy.uix.widget import Widget
+from kivy.uix.floatlayout import FloatLayout
+from kivy.graphics import Color, Line
+from kivy.core.window import Window
 
-# Server settings
-SERVER_IP = '0.0.0.0'  # Replace with your server's IP address
-SERVER_PORT = 12345
+# Set up the client
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.connect(('server_ip_address', 65432))  # replace 'server_ip_address' with the server's IP address
 
-class TouchEventSender(App):
-    def build(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+class TouchInput(Widget):
+    def __init__(self, **kwargs):
+        super(TouchInput, self).__init__(**kwargs)
+        self.touch_points = []
 
-        # GUI layout
-        self.layout = BoxLayout(orientation='vertical')
-
-        # Label to display touch event status
-        self.status_label = Label(text='Touch events will be sent to the server.', size_hint=(1, 0.1))
-        self.layout.add_widget(self.status_label)
-
-        # Widget to capture touch events
-        self.touch_widget = TouchWidget()
-        self.layout.add_widget(self.touch_widget)
-
-        # Connect button
-        self.connect_button = Button(text='Connect to Server', size_hint=(1, 0.1))
-        self.connect_button.bind(on_press=self.connect_to_server)
-        self.layout.add_widget(self.connect_button)
-
-        return self.layout
-
-    def connect_to_server(self, instance):
-        try:
-            self.sock.connect((SERVER_IP, SERVER_PORT))
-            self.status_label.text = f"Connected to server at {SERVER_IP}:{SERVER_PORT}"
-        except Exception as e:
-            self.status_label.text = f"Connection error: {e}"
-
-    def send_touch_event(self, x, y):
-        try:
-            data = f"{x} {y}".encode('utf-8')
-            self.sock.send(data)
-        except Exception as e:
-            self.status_label.text = f"Error sending touch event: {e}"
-
-class TouchWidget(Widget):
     def on_touch_down(self, touch):
-        app = App.get_running_app()
-        app.send_touch_event(int(touch.x), int(touch.y))
-        return super().on_touch_down(touch)
+        with self.canvas:
+            Color(1, 1, 1)
+            touch.ud['line'] = Line(points=(touch.x, touch.y), width=2)
+        self.touch_points.append((touch.x, touch.y))
 
     def on_touch_move(self, touch):
-        app = App.get_running_app()
-        app.send_touch_event(int(touch.x), int(touch.y))
-        return super().on_touch_move(touch)
+        with self.canvas:
+            touch.ud['line'].points += [touch.x, touch.y]
+        self.touch_points.append((touch.x, touch.y))
+        if len(self.touch_points) >= 5:  # Send data more frequently
+            self.send_touch()
 
     def on_touch_up(self, touch):
-        app = App.get_running_app()
-        app.send_touch_event(int(touch.x), int(touch.y))
-        return super().on_touch_up(touch)
+        self.send_touch()  # Send remaining points when touch ends
+        self.touch_points = []
+
+    def send_touch(self):
+        if self.touch_points:
+            positions = [(p[0], Window.height - p[1]) for p in self.touch_points]  # Correct coordinate inversion
+            data = pickle.dumps(positions)
+            client_socket.sendall(data)
+            self.touch_points = []
+
+class MyApp(App):
+    def build(self):
+        parent = FloatLayout()
+        touch_input = TouchInput()
+        parent.add_widget(touch_input)
+        return parent
 
 if __name__ == '__main__':
-    TouchEventSender().run()
+    MyApp().run()
+    client_socket.close()

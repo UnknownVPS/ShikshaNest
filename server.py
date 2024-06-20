@@ -1,56 +1,62 @@
-#!/usr/bin/env python3
-import tkinter as tk
+# server.py
 import socket
-import threading
+import pygame
+import pickle
+from itertools import tee
 
-# Global variables for screen dimensions
-SCREEN_WIDTH, SCREEN_HEIGHT = (1366, 768)  # Adjust as per your screen resolution
+def interpolate_points(points):
+    def pairwise(iterable):
+        "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+        a, b = tee(iterable)
+        next(b, None)
+        return zip(a, b)
+    
+    interpolated = []
+    for (x0, y0), (x1, y1) in pairwise(points):
+        interpolated.append((x0, y0))
+        steps = max(abs(x1 - x0), abs(y1 - y0))
+        if steps == 0:
+            continue
+        for step in range(1, int(steps)):
+            x = x0 + (x1 - x0) * step / steps
+            y = y0 + (y1 - y0) * step / steps
+            interpolated.append((x, y))
+    interpolated.append(points[-1])
+    return interpolated
 
-# Colors
-DRAW_COLOR = 'black'
+# Initialize pygame
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Drawing Server")
+running = True
 
-class ScreenAnnotatorServer:
-    def __init__(self, root):
-        self.root = root
-        self.canvas = tk.Canvas(root, width=SCREEN_WIDTH, height=SCREEN_HEIGHT, bg='white')
-        self.canvas.pack()
+# Set up the server
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_socket.bind(('0.0.0.0', 65432))
+server_socket.listen(1)
+print("Waiting for a connection...")
+conn, addr = server_socket.accept()
+print(f"Connected to {addr}")
 
-        # Start server in a separate thread
-        self.server_thread = threading.Thread(target=self.start_server)
-        self.server_thread.start()
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    
+    data = conn.recv(4096)
+    if not data:
+        break
 
-    def draw_circle(self, x, y):
-        self.canvas.create_oval(x-5, y-5, x+5, y+5, fill=DRAW_COLOR, outline=DRAW_COLOR)
+    try:
+        positions = pickle.loads(data)
+        if len(positions) > 1:
+            smoothed_positions = interpolate_points(positions)
+            pygame.draw.lines(screen, (255, 255, 255), False, smoothed_positions, 5)
+    except pickle.PickleError:
+        continue
 
-    def start_server(self):
-        # Initialize socket
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(('0.0.0.0', 12345))  # Bind to all interfaces on port 12345
-        server_socket.listen(1)  # Listen for incoming connections
+    pygame.display.flip()
 
-        print("Server is listening for connections...")
-        client_socket, client_address = server_socket.accept()
-        print(f"Connection established with {client_address}")
-
-        while True:
-            try:
-                data = client_socket.recv(1024).decode('utf-8')
-                if not data:
-                    break
-                x, y = map(int, data.split())
-                self.draw_circle(x, y)
-            except Exception as e:
-                print(f"Error receiving data: {e}")
-                break
-
-        client_socket.close()
-        print("Connection closed.")
-
-def main():
-    root = tk.Tk()
-    root.title("Screen Annotation - Server")
-    app = ScreenAnnotatorServer(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
+conn.close()
+server_socket.close()
+pygame.quit()
