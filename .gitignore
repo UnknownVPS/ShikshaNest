@@ -1,3 +1,5 @@
-/.buildozer
-/.venv
-/bin
+main.build
+main.dist
+main.onefile-build
+main0.py
+main.bin
