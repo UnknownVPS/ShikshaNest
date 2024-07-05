@@ -4,15 +4,21 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTreeView, QFileSystemMo
                              QVBoxLayout, QHBoxLayout, QWidget, QLineEdit, QPushButton,
                              QMessageBox, QInputDialog, QMenu, QAction, QTextEdit, QDialog,
                              QLabel, QListWidget, QFileDialog, QStyle, QToolBar, QSplitter,
-                             QListView, QTabWidget, QPlainTextEdit)
+                             QListView, QTabWidget, QPlainTextEdit, QProgressDialog, QDialogButtonBox)
 from PyQt5.QtGui import QIcon, QStandardItemModel, QStandardItem
-from PyQt5.QtCore import Qt, QDir, QSize
+from PyQt5.QtCore import Qt, QDir, QSize, QMimeData, QUrl
 import shutil
 import json
 from datetime import datetime
 import subprocess
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 STUDY_MATERIAL_ROOT = os.path.expanduser("~/StudyMaterial")
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 class CustomFileSystemModel(QFileSystemModel):
     def __init__(self, parent=None):
@@ -53,6 +59,11 @@ class StudyMaterialManager(QMainWindow):
         self.tags = {}
         self.flashcards = {}
         self.file_versions = {}
+        self.drive_service = None
+        self.credentials = None
+        self.total_files = 0
+        self.uploaded_files = 0
+        self.progress_dialog = None
         self.load_metadata()
         self.setup_ui()
 
@@ -155,6 +166,11 @@ class StudyMaterialManager(QMainWindow):
         add_file_action = QAction(QIcon("icons/upload.png"), "Add File", self)
         add_file_action.triggered.connect(self.add_file)
         toolbar.addAction(add_file_action)
+
+        # Add Google Drive upload button
+        upload_drive_action = QAction(QIcon("icons/cloud-upload.png"), "Upload to Google Drive", self)
+        upload_drive_action.triggered.connect(self.upload_to_drive)
+        toolbar.addAction(upload_drive_action)
 
     def set_modern_theme(self):
         self.setStyleSheet("""
@@ -308,9 +324,9 @@ class StudyMaterialManager(QMainWindow):
         note_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileDialogDetailedView), "Add/Edit Note")
         tag_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileDialogInfoView), "Manage Tags")
         flashcard_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileDialogContentsView), "Manage Flashcards")
-        version_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileDialogDetailedView), "Version")
-        if os.path.isfile(item_path):
-            version_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileIcon), "Show Versions")
+        version_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileIcon), "Show Versions")
+
+        get_link_action = menu.addAction(self.style().standardIcon(QStyle.SP_FileDialogContentsView), "Get Download Link")
 
         action = menu.exec_(global_pos)
 
@@ -324,6 +340,8 @@ class StudyMaterialManager(QMainWindow):
             self.manage_flashcards(item_path)
         elif action == version_action:
             self.show_versions(item_path)
+        elif action == get_link_action:
+            self.get_download_link(item_path)
 
     def show_versions(self, path):
         if path in self.file_versions:
@@ -526,6 +544,145 @@ class StudyMaterialManager(QMainWindow):
     def update_path_label(self, path):
         relative_path = os.path.relpath(path, STUDY_MATERIAL_ROOT)
         self.path_label.setText(relative_path)
+
+    def authenticate_drive(self):
+        if os.path.exists(os.path.join(STUDY_MATERIAL_ROOT, '.credentials.json')):
+            # Check if credentials are already stored
+            if os.path.exists(os.path.join(STUDY_MATERIAL_ROOT, '.token.json')):
+                self.credentials = Credentials.from_authorized_user_file(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), SCOPES)
+            # If there are no (valid) credentials available, let the user log in
+            if not self.credentials or not self.credentials.valid:
+                if self.credentials and self.credentials.expired and self.credentials.refresh_token:
+                    self.credentials.refresh(Request())
+                else:
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        os.path.join(STUDY_MATERIAL_ROOT, '.credentials.json'), SCOPES)
+                    self.credentials = flow.run_local_server(port=0)
+                # Save the credentials for the next run
+                with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'w') as token:
+                    token.write(self.credentials.to_json())
+            self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        else:
+            error_msg = "Error: Client credentials file (.credentials.json) not found.\n\n" \
+                            "To obtain the credentials file:\n" \
+                            "1. Go to Google Cloud Console: https://console.cloud.google.com/\n" \
+                            "2. Create a new project (if necessary) and select it.\n" \
+                            "3. Enable the Google Drive API for your project.\n" \
+                            "4. Create OAuth 2.0 Client ID credentials for a desktop app.\n" \
+                            "5. Download the JSON file and save it as '.credentials.json' in your StudyMaterial folder."
+            QMessageBox.critical(None, "Error", error_msg, QMessageBox.Ok)
+    def upload_to_drive(self):
+        if not self.drive_service:
+            self.authenticate_drive()
+        
+        if self.drive_service:
+            self.total_files = sum([len(files) for _, _, files in os.walk(STUDY_MATERIAL_ROOT)])
+            self.uploaded_files = 0
+            
+            self.progress_dialog = QProgressDialog("Preparing to upload...", "Cancel", 0, self.total_files, self)
+            self.progress_dialog.setWindowModality(Qt.WindowModal)
+            self.progress_dialog.setWindowTitle("Uploading to Google Drive")
+            self.progress_dialog.show()
+
+            try:
+                root_folder = self.create_drive_folder('StudyMaterial')
+                self.upload_folder_to_drive(STUDY_MATERIAL_ROOT, root_folder['id'])
+                QMessageBox.information(self, "Upload Complete", "Successfully uploaded to Google Drive!")
+            except Exception as e:
+                QMessageBox.warning(self, "Upload Error", f"Failed to upload: {str(e)}")
+            finally:
+                self.progress_dialog.close()
+
+    def upload_folder_to_drive(self, local_path, parent_id):
+        items = os.listdir(local_path)
+        
+        for item in items:
+            item_path = os.path.join(local_path, item)
+            if os.path.isdir(item_path):
+                folder = self.create_drive_folder(item, parent_id)
+                self.upload_folder_to_drive(item_path, folder['id'])
+            else:
+                self.upload_file_to_drive(item_path, parent_id)
+            
+            self.uploaded_files += 1
+            self.progress_dialog.setValue(self.uploaded_files)
+            if self.progress_dialog.wasCanceled():
+                break
+
+    def create_drive_folder(self, folder_name, parent_id=None):
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        if parent_id:
+            file_metadata['parents'] = [parent_id]
+        
+        folder = self.drive_service.files().create(body=file_metadata, fields='id').execute()
+        return folder
+
+    def upload_file_to_drive(self, file_path, parent_id):
+        file_metadata = {'name': os.path.basename(file_path), 'parents': [parent_id]}
+        media = MediaFileUpload(file_path)
+        file = self.drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        return file
+    def get_drive_link(self, file_id):
+        return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+        
+
+    def get_download_link(self, file_path):
+        if not self.drive_service:
+            self.authenticate_drive()
+        
+        if self.drive_service:
+            try:
+                # Search for the file in Drive by name
+                query = f"name='{os.path.basename(file_path)}'"
+                response = self.drive_service.files().list(q=query, fields='files(id)').execute()
+                files = response.get('files', [])
+
+                if not files:
+                    QMessageBox.warning(self, "File Not Found", "The file was not found on Google Drive.")
+                    return
+
+                file_id = files[0]['id']
+                link = self.get_drive_link(file_id)
+
+                msg_box = QMessageBox(self)
+                msg_box.setText(f"Download link: {link}")
+                msg_box.setWindowTitle("Download Link")
+
+                # Add a button to copy the link to clipboard
+                copy_button = msg_box.addButton('Copy', QMessageBox.ActionRole)
+                msg_box.exec_()
+
+                if msg_box.clickedButton() == copy_button:
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(link)
+
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to get download link: {str(e)}")
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        current_path = os.path.join(STUDY_MATERIAL_ROOT, self.path_label.text())
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if os.path.isfile(file_path):
+                if os.path.dirname(os.path.dirname(os.path.dirname(current_path))) == STUDY_MATERIAL_ROOT:
+                    dest_path = os.path.join(current_path, os.path.basename(file_path))
+                    shutil.copy(file_path, dest_path)
+                    self.add_file_version(dest_path)
+                else:
+                    QMessageBox.warning(self, "Invalid Drop", "Please drop files only in Chapter folders.")
+            else:
+                QMessageBox.warning(self, "Invalid Drop", "Dropping folders is not allowed.")
+        
+        self.update_ui(current_path)
 
     def load_metadata(self):
         metadata_file = os.path.join(STUDY_MATERIAL_ROOT, ".study_metadata.json")
