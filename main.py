@@ -16,9 +16,12 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import requests
+import time
 
 STUDY_MATERIAL_ROOT = os.path.expanduser("~/StudyMaterial")
 SCOPES = ['https://www.googleapis.com/auth/drive']
+AUTH_SERVER_URL = 'http://localhost:3000'  # Update this with your actual server URL
 
 class CustomFileSystemModel(QFileSystemModel):
     def __init__(self, parent=None):
@@ -64,9 +67,10 @@ class StudyMaterialManager(QMainWindow):
         self.total_files = 0
         self.uploaded_files = 0
         self.progress_dialog = None
+        self.drive_folder_id = None
         self.load_metadata()
         self.setup_ui()
-
+        self.setAcceptDrops(True)
     def setup_ui(self):
         self.create_toolbar()
         
@@ -546,35 +550,67 @@ class StudyMaterialManager(QMainWindow):
         self.path_label.setText(relative_path)
 
     def authenticate_drive(self):
-        if os.path.exists(os.path.join(STUDY_MATERIAL_ROOT, '.credentials.json')):
-            # Check if credentials are already stored
-            if os.path.exists(os.path.join(STUDY_MATERIAL_ROOT, '.token.json')):
-                self.credentials = Credentials.from_authorized_user_file(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), SCOPES)
-            # If there are no (valid) credentials available, let the user log in
-            if not self.credentials or not self.credentials.valid:
-                if self.credentials and self.credentials.expired and self.credentials.refresh_token:
-                    self.credentials.refresh(Request())
-                else:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        os.path.join(STUDY_MATERIAL_ROOT, '.credentials.json'), SCOPES)
-                    self.credentials = flow.run_local_server(port=0)
-                # Save the credentials for the next run
-                with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'w') as token:
-                    token.write(self.credentials.to_json())
-            self.drive_service = build('drive', 'v3', credentials=self.credentials)
-        else:
-            error_msg = "Error: Client credentials file (.credentials.json) not found.\n\n" \
-                            "To obtain the credentials file:\n" \
-                            "1. Go to Google Cloud Console: https://console.cloud.google.com/\n" \
-                            "2. Create a new project (if necessary) and select it.\n" \
-                            "3. Enable the Google Drive API for your project.\n" \
-                            "4. Create OAuth 2.0 Client ID credentials for a desktop app.\n" \
-                            "5. Download the JSON file and save it as '.credentials.json' in your StudyMaterial folder."
-            QMessageBox.critical(None, "Error", error_msg, QMessageBox.Ok)
+        # Request device code
+        response = requests.post(f"{AUTH_SERVER_URL}/device", json={"code": "request_code"})
+        device_code_info = response.json()
+        # Display the user code to the user
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText(f"Please visit {AUTH_SERVER_URL}/auth?code={device_code_info['userCode']} and enter the code: {device_code_info['userCode']}")
+        msg.setWindowTitle("Authentication Required")
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+        # Poll for token
+        while True:
+            response = requests.get(f"{AUTH_SERVER_URL}/token/{device_code_info['deviceCode']}")
+            if response.status_code == 200:
+                token_info = response.json()
+                break
+            elif response.json().get('error') == 'authorization_pending':
+                time.sleep(5)  # Wait before polling again
+            else:
+                raise Exception(f"Error: {response.json()}")
+
+        self.credentials = Credentials(
+            token=token_info['access_token'],
+            refresh_token=token_info['refresh_token'],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="457370676980-7d9vsvbpsrpebrv3mi2ep2bqonqkcm1i.apps.googleusercontent.com",
+            client_secret=None,
+            scopes=SCOPES
+        )
+
+        # Save the credentials for future use
+        with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'w') as token:
+            token.write(self.credentials.to_json())
+
+        self.drive_service = build('drive', 'v3', credentials=self.credentials)
+
     def upload_to_drive(self):
-        if not self.drive_service:
-            self.authenticate_drive()
+        if not os.path.exists(os.path.join(STUDY_MATERIAL_ROOT, '.token.json')):
+            try:
+                self.authenticate_drive()
+            except Exception as e:
+                QMessageBox.warning(self, "Authentication Error", f"Failed to authenticate: {str(e)}")
+                return            
         
+        try:
+            with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'r') as token:
+                token_info = json.load(token)
+            self.credentials = Credentials(
+                token=token_info['token'],
+                refresh_token=token_info['refresh_token'],
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id="457370676980-7d9vsvbpsrpebrv3mi2ep2bqonqkcm1i.apps.googleusercontent.com",
+                client_secret=None,
+                scopes=SCOPES
+            )
+            self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        except Exception as e:
+            QMessageBox.warning(self, "Drive Service Error", f"Failed to create Drive service: {str(e)}")
+            return
+
         if self.drive_service:
             self.total_files = sum([len(files) for _, _, files in os.walk(STUDY_MATERIAL_ROOT)])
             self.uploaded_files = 0
@@ -585,8 +621,11 @@ class StudyMaterialManager(QMainWindow):
             self.progress_dialog.show()
 
             try:
-                root_folder = self.create_drive_folder('StudyMaterial')
-                self.upload_folder_to_drive(STUDY_MATERIAL_ROOT, root_folder['id'])
+                if not self.drive_folder_id:
+                    root_folder = self.create_drive_folder('StudyMaterial')
+                    self.drive_folder_id = root_folder['id']
+                    self.save_metadata()  # Save the folder ID
+                self.upload_folder_to_drive(STUDY_MATERIAL_ROOT, self.drive_folder_id)
                 QMessageBox.information(self, "Upload Complete", "Successfully uploaded to Google Drive!")
             except Exception as e:
                 QMessageBox.warning(self, "Upload Error", f"Failed to upload: {str(e)}")
@@ -599,7 +638,7 @@ class StudyMaterialManager(QMainWindow):
         for item in items:
             item_path = os.path.join(local_path, item)
             if os.path.isdir(item_path):
-                folder = self.create_drive_folder(item, parent_id)
+                folder = self.get_or_create_drive_folder(item, parent_id)
                 self.upload_folder_to_drive(item_path, folder['id'])
             else:
                 self.upload_file_to_drive(item_path, parent_id)
@@ -609,6 +648,16 @@ class StudyMaterialManager(QMainWindow):
             if self.progress_dialog.wasCanceled():
                 break
 
+    def get_or_create_drive_folder(self, folder_name, parent_id):
+        query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        folders = response.get('files', [])
+
+        if folders:
+            return folders[0]
+        else:
+            return self.create_drive_folder(folder_name, parent_id)
+
     def create_drive_folder(self, folder_name, parent_id=None):
         file_metadata = {
             'name': folder_name,
@@ -616,19 +665,42 @@ class StudyMaterialManager(QMainWindow):
         }
         if parent_id:
             file_metadata['parents'] = [parent_id]
-        
+            
         folder = self.drive_service.files().create(body=file_metadata, fields='id').execute()
         return folder
 
     def upload_file_to_drive(self, file_path, parent_id):
-        file_metadata = {'name': os.path.basename(file_path), 'parents': [parent_id]}
-        media = MediaFileUpload(file_path)
-        file = self.drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        return file
+        file_name = os.path.basename(file_path)
+        query = f"name='{file_name}' and '{parent_id}' in parents and trashed=false"
+        response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)').execute()
+        files = response.get('files', [])
+
+        media = MediaFileUpload(file_path, resumable=True)
+
+        if files:
+            # File exists, check if it needs updating
+            drive_file = files[0]
+            drive_modified_time = datetime.fromisoformat(drive_file['modifiedTime'][:-1])  # Remove 'Z' at the end
+            local_modified_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+
+            if local_modified_time > drive_modified_time:
+                # Update the file
+                self.drive_service.files().update(
+                    fileId=drive_file['id'],
+                    media_body=media
+                ).execute()
+        else:
+            # File doesn't exist, create it
+            file_metadata = {'name': file_name, 'parents': [parent_id]}
+            self.drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+    
     def get_drive_link(self, file_id):
         return f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
-        
-
+    
     def get_download_link(self, file_path):
         if not self.drive_service:
             self.authenticate_drive()
@@ -683,7 +755,7 @@ class StudyMaterialManager(QMainWindow):
                 QMessageBox.warning(self, "Invalid Drop", "Dropping folders is not allowed.")
         
         self.update_ui(current_path)
-
+    
     def load_metadata(self):
         metadata_file = os.path.join(STUDY_MATERIAL_ROOT, ".study_metadata.json")
         if os.path.exists(metadata_file):
@@ -693,6 +765,7 @@ class StudyMaterialManager(QMainWindow):
                 self.tags = metadata.get("tags", {})
                 self.flashcards = metadata.get("flashcards", {})
                 self.file_versions = metadata.get("file_versions", {})
+                self.drive_folder_id = metadata.get("drive_folder_id", None)
 
     def save_metadata(self):
         metadata_file = os.path.join(STUDY_MATERIAL_ROOT, ".study_metadata.json")
@@ -700,7 +773,8 @@ class StudyMaterialManager(QMainWindow):
             "notes": self.notes,
             "tags": self.tags,
             "flashcards": self.flashcards,
-            "file_versions": self.file_versions
+            "file_versions": self.file_versions,
+            "drive_folder_id": self.drive_folder_id
         }
         with open(metadata_file, "w") as f:
             json.dump(metadata, f)

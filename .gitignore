@@ -4,3 +4,6 @@ main.onefile-build
 main0.py
 main.bin
 icons.zip
+node_modules
+package-lock.json
+.env
