@@ -21,7 +21,7 @@ import time
 
 STUDY_MATERIAL_ROOT = os.path.expanduser("~/StudyMaterial")
 SCOPES = ['https://www.googleapis.com/auth/drive']
-AUTH_SERVER_URL = 'http://localhost:3000'  # Update this with your actual server URL
+AUTH_SERVER_URL = 'https://fedrock.unknownvps.eu.org'  # Update this with your actual server URL
 
 class CustomFileSystemModel(QFileSystemModel):
     def __init__(self, parent=None):
@@ -576,7 +576,7 @@ class StudyMaterialManager(QMainWindow):
             token=token_info['access_token'],
             refresh_token=token_info['refresh_token'],
             token_uri="https://oauth2.googleapis.com/token",
-            client_id="457370676980-7d9vsvbpsrpebrv3mi2ep2bqonqkcm1i.apps.googleusercontent.com",
+            client_id="474852761074-shiqhqui7hd0jil3pbetn25hv7ki4421.apps.googleusercontent.com",
             client_secret=None,
             scopes=SCOPES
         )
@@ -602,7 +602,7 @@ class StudyMaterialManager(QMainWindow):
                 token=token_info['token'],
                 refresh_token=token_info['refresh_token'],
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id="457370676980-7d9vsvbpsrpebrv3mi2ep2bqonqkcm1i.apps.googleusercontent.com",
+                client_id="474852761074-shiqhqui7hd0jil3pbetn25hv7ki4421.apps.googleusercontent.com",
                 client_secret=None,
                 scopes=SCOPES
             )
