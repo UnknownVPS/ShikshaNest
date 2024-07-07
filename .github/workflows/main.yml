@@ -51,6 +51,16 @@ jobs:
           release_name: Release ${{ steps.tag.outputs.release_tag }}
           draft: false
           prerelease: false
+          body: |
+            ### 🚀 Release Details
+
+            This release includes a compiled executable for Linux platforms only.
+
+            **General Overview:**
+            - 🛠️ Enhancements to improve performance and stability.
+            - 🖼️ Icons for this release are available for download [here](https://files.unknownvps.eu.org/get/file/icons.zip).
+
+            **Note:** This build is specifically for Linux systems.
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
