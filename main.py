@@ -18,6 +18,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import requests
 import time
+from icon import get_icon
 
 STUDY_MATERIAL_ROOT = os.path.expanduser("~/StudyMaterial")
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -27,10 +28,10 @@ class CustomFileSystemModel(QFileSystemModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.icons = {
-            "Subject": QIcon("icons/folder.png"),
-            "Teacher": QIcon("icons/user.png"),
-            "Chapter": QIcon("icons/file-text.png"),
-            "File": QIcon("icons/file.png"),
+            "Subject": get_icon('folder'),
+            "Teacher": get_icon('user'),
+            "Chapter": get_icon("file-text"),
+            "File": get_icon('file'),
         }
 
     def icon(self, index):
@@ -56,7 +57,7 @@ class StudyMaterialManager(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Study Material Manager")
-        self.setWindowIcon(QIcon('icons/logo.png'))
+        self.setWindowIcon(get_icon('logo'))
         self.setGeometry(100, 100, 1200, 800)
         self.notes = {}
         self.tags = {}
@@ -86,7 +87,7 @@ class StudyMaterialManager(QMainWindow):
         top_bar_layout.setSpacing(2)
         main_layout.addLayout(top_bar_layout)
         
-        self.home_button = QPushButton(QIcon("icons/home.png"), "")
+        self.home_button = QPushButton(get_icon("home"), "")
         self.home_button.setFixedSize(24, 24)
         self.home_button.clicked.connect(self.go_home)
         top_bar_layout.addWidget(self.home_button)
@@ -99,7 +100,7 @@ class StudyMaterialManager(QMainWindow):
         self.search_bar.setPlaceholderText("Search...")
         self.search_bar.setMaximumWidth(200)
         self.search_bar.setFixedHeight(24)
-        search_button = QPushButton(QIcon("icons/search.png"), "")
+        search_button = QPushButton(get_icon("search"), "")
         search_button.setFixedSize(24, 24)
         search_button.clicked.connect(self.search)
         top_bar_layout.addWidget(self.search_bar)
@@ -155,24 +156,24 @@ class StudyMaterialManager(QMainWindow):
         toolbar.setStyleSheet("QToolBar { spacing: 1px; padding: 1px; }")
         self.addToolBar(toolbar)
         
-        add_subject_action = QAction(QIcon("icons/folder-plus.png"), "Add Subject", self)
+        add_subject_action = QAction(get_icon("folder-plus"), "Add Subject", self)
         add_subject_action.triggered.connect(lambda: self.add_item("Subject"))
         toolbar.addAction(add_subject_action)
 
-        add_teacher_action = QAction(QIcon("icons/user-plus.png"), "Add Teacher", self)
+        add_teacher_action = QAction(get_icon("user-plus"), "Add Teacher", self)
         add_teacher_action.triggered.connect(lambda: self.add_item("Teacher"))
         toolbar.addAction(add_teacher_action)
 
-        add_chapter_action = QAction(QIcon("icons/file-plus.png"), "Add Chapter", self)
+        add_chapter_action = QAction(get_icon("file-plus"), "Add Chapter", self)
         add_chapter_action.triggered.connect(lambda: self.add_item("Chapter"))
         toolbar.addAction(add_chapter_action)
 
-        add_file_action = QAction(QIcon("icons/upload.png"), "Add File", self)
+        add_file_action = QAction(get_icon("upload"), "Add File", self)
         add_file_action.triggered.connect(self.add_file)
         toolbar.addAction(add_file_action)
 
         # Add Google Drive upload button
-        upload_drive_action = QAction(QIcon("icons/cloud-upload.png"), "Upload to Google Drive", self)
+        upload_drive_action = QAction(get_icon("cloud-upload"), "Upload to Google Drive", self)
         upload_drive_action.triggered.connect(self.upload_to_drive)
         toolbar.addAction(upload_drive_action)
 
