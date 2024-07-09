@@ -69,6 +69,7 @@ jobs:
 
   build-and-release-windows:
     runs-on: windows-latest
+    needs: build-and-release-linux
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -81,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nuitka
+          pip install pyinstaller
           pip install PyQt5
           pip install google-auth-oauthlib
           pip install google-auth
@@ -89,20 +90,16 @@ jobs:
           pip install requests
           # Add any other dependencies your project needs
 
-      - name: Set Nuitka Environment Variables
+      - name: Build with PyInstaller
         run: |
-          setx NUITKA_DOWNLOADS "1"
-
-      - name: Build with Nuitka
-        run: |
-          nuitka --onefile --enable-plugin=pyqt5 main.py
+          pyinstaller --onefile main.py
 
       - name: Upload Windows Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
-          upload_url: ${{ needs.build-and-release-linux.outputs.create_release.outputs.upload_url }}
-          asset_path: ./main.exe
+          upload_url: ${{ needs.build-and-release-linux.outputs['create_release.upload_url'] }}
+          asset_path: ./dist/main.exe
           asset_name: main_windows.exe
           asset_content_type: application/octet-stream
