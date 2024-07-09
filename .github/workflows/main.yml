@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build-and-release:
+  build-and-release-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -38,8 +38,7 @@ jobs:
 
       - name: Generate release tag
         id: tag
-        run: |
-          echo "::set-output name=release_tag::v${{ steps.date.outputs.date }}.${GITHUB_RUN_NUMBER}"
+        run: echo "::set-output name=release_tag::v${{ steps.date.outputs.date }}.${{ github.run_number }}"
 
       - name: Create Release
         id: create_release
@@ -53,20 +52,53 @@ jobs:
           prerelease: false
           body: |
             ### 🚀 Release Details
-
-            This release includes a compiled executable for Linux platforms only.
-
+            This release includes compiled executables for both Linux and Windows platforms.
             **General Overview:**
             - 🛠️ Enhancements to improve performance and stability.
+            **Note:** This build includes both Linux and Windows executables.
 
-            **Note:** This build is specifically for Linux systems.
-
-      - name: Upload Release Asset
+      - name: Upload Linux Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./main.bin
-          asset_name: main.bin
+          asset_name: main_linux.bin
+          asset_content_type: application/octet-stream
+
+  build-and-release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install nuitka
+          pip install PyQt5
+          pip install google-auth-oauthlib
+          pip install google-auth
+          pip install google-api-python-client
+          pip install requests
+          # Add any other dependencies your project needs
+
+      - name: Build with Nuitka
+        run: |
+          nuitka --onefile --enable-plugin=pyqt5 main.py
+
+      - name: Upload Windows Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          upload_url: ${{ steps.build-and-release-linux.outputs.create_release.outputs.upload_url }}
+          asset_path: ./main.exe
+          asset_name: main_windows.exe
           asset_content_type: application/octet-stream
