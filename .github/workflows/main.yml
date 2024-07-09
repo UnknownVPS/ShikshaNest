@@ -89,6 +89,10 @@ jobs:
           pip install requests
           # Add any other dependencies your project needs
 
+      - name: Set Nuitka Environment Variables
+        run: |
+          setx NUITKA_DOWNLOADS "1"
+
       - name: Build with Nuitka
         run: |
           nuitka --onefile --enable-plugin=pyqt5 main.py
@@ -98,7 +102,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
-          upload_url: ${{ steps.build-and-release-linux.outputs.create_release.outputs.upload_url }}
+          upload_url: ${{ needs.build-and-release-linux.outputs.create_release.outputs.upload_url }}
           asset_path: ./main.exe
           asset_name: main_windows.exe
           asset_content_type: application/octet-stream
