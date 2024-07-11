@@ -594,8 +594,8 @@ class StudyMaterialManager(QMainWindow):
                 self.authenticate_drive()
             except Exception as e:
                 QMessageBox.warning(self, "Authentication Error", f"Failed to authenticate: {str(e)}")
-                return            
-        
+                return
+
         try:
             with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'r') as token:
                 token_info = json.load(token)
@@ -609,7 +609,21 @@ class StudyMaterialManager(QMainWindow):
             )
             self.drive_service = build('drive', 'v3', credentials=self.credentials)
         except Exception as e:
-            QMessageBox.warning(self, "Drive Service Error", f"Failed to create Drive service: {str(e)}")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Drive Service Error")
+            msg_box.setText(f"Failed to create Drive service: {str(e)}")
+            msg_box.setInformativeText("Would you like to delete the token.json file?")
+            msg_box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+            delete_button = msg_box.addButton("Delete", QMessageBox.DestructiveRole)
+            msg_box.exec_()
+
+            if msg_box.clickedButton() == delete_button:
+                try:
+                    os.remove(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'))
+                    QMessageBox.information(self, "Token Deleted", "The token.json file has been deleted. Please re-authenticate.")
+                except Exception as del_e:
+                    QMessageBox.warning(self, "Deletion Error", f"Failed to delete token.json: {str(del_e)}")
             return
 
         if self.drive_service:
