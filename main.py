@@ -555,11 +555,24 @@ class StudyMaterialManager(QMainWindow):
         response = requests.post(f"{AUTH_SERVER_URL}/device", json={"code": "request_code"})
         device_code_info = response.json()
         # Display the user code to the user
-        msg = QMessageBox()
+        msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Information)
-        msg.setText(f"Please visit {AUTH_SERVER_URL}/auth?code={device_code_info['userCode']} and enter the code: {device_code_info['userCode']}")
+        msg.setText(f"Please visit the following URL in your browser")
         msg.setWindowTitle("Authentication Required")
-        msg.setStandardButtons(QMessageBox.Ok)
+        
+        # Create a QLineEdit to display the URL (read-only)
+        url_display = QLineEdit(f"{AUTH_SERVER_URL}/auth?code={device_code_info['userCode']}")
+        url_display.setReadOnly(True)
+        
+        # Create a copy button
+        copy_button = QPushButton("Copy URL")
+        copy_button.clicked.connect(lambda: QApplication.clipboard().setText(url_display.text()))
+        
+        # Add widgets to the message box layout
+        layout = msg.layout()
+        layout.addWidget(url_display, 1, 0, 1, layout.columnCount())
+        layout.addWidget(copy_button, 2, 0, 1, layout.columnCount())
+        
         msg.exec_()
 
         # Poll for token
@@ -596,35 +609,19 @@ class StudyMaterialManager(QMainWindow):
                 QMessageBox.warning(self, "Authentication Error", f"Failed to authenticate: {str(e)}")
                 return
 
-        try:
-            with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'r') as token:
-                token_info = json.load(token)
-            self.credentials = Credentials(
-                token=token_info['token'],
-                refresh_token=token_info['refresh_token'],
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id="474852761074-shiqhqui7hd0jil3pbetn25hv7ki4421.apps.googleusercontent.com",
-                client_secret=None,
-                scopes=SCOPES
-            )
-            self.drive_service = build('drive', 'v3', credentials=self.credentials)
-        except Exception as e:
-            msg_box = QMessageBox(self)
-            msg_box.setIcon(QMessageBox.Warning)
-            msg_box.setWindowTitle("Drive Service Error")
-            msg_box.setText(f"Failed to create Drive service: {str(e)}")
-            msg_box.setInformativeText("Would you like to delete the token.json file?")
-            msg_box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-            delete_button = msg_box.addButton("Delete", QMessageBox.DestructiveRole)
-            msg_box.exec_()
-
-            if msg_box.clickedButton() == delete_button:
-                try:
-                    os.remove(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'))
-                    QMessageBox.information(self, "Token Deleted", "The token.json file has been deleted. Please re-authenticate.")
-                except Exception as del_e:
-                    QMessageBox.warning(self, "Deletion Error", f"Failed to delete token.json: {str(del_e)}")
-            return
+        
+        with open(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'), 'r') as token:
+            token_info = json.load(token)
+        self.credentials = Credentials(
+            token=token_info['token'],
+            refresh_token=token_info['refresh_token'],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="474852761074-shiqhqui7hd0jil3pbetn25hv7ki4421.apps.googleusercontent.com",
+            client_secret=None,
+            scopes=SCOPES
+        )
+        self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        
 
         if self.drive_service:
             self.total_files = sum([len(files) for _, _, files in os.walk(STUDY_MATERIAL_ROOT)])
@@ -643,7 +640,21 @@ class StudyMaterialManager(QMainWindow):
                 self.upload_folder_to_drive(STUDY_MATERIAL_ROOT, self.drive_folder_id)
                 QMessageBox.information(self, "Upload Complete", "Successfully uploaded to Google Drive!")
             except Exception as e:
-                QMessageBox.warning(self, "Upload Error", f"Failed to upload: {str(e)}")
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Warning)
+                msg_box.setWindowTitle("Drive Service Error")
+                msg_box.setText(f"Failed to create upload to drive: {str(e)}")
+                msg_box.setInformativeText("Would you like to delete the token.json file?")
+                msg_box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+                delete_button = msg_box.addButton("Delete", QMessageBox.DestructiveRole)
+                msg_box.exec_()
+
+                if msg_box.clickedButton() == delete_button:
+                    try:
+                        os.remove(os.path.join(STUDY_MATERIAL_ROOT, '.token.json'))
+                        QMessageBox.information(self, "Token Deleted", "The token.json file has been deleted. Please re-authenticate.")
+                    except Exception as del_e:
+                        QMessageBox.warning(self, "Deletion Error", f"Failed to delete token.json: {str(del_e)}")
             finally:
                 self.progress_dialog.close()
 
