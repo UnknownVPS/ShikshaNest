@@ -19,7 +19,9 @@ from googleapiclient.http import MediaFileUpload
 import requests
 import time
 from icon import get_icon
+from updater import UpdateManager
 
+VERSION = "__VERSION__"
 STUDY_MATERIAL_ROOT = os.path.expanduser("~/StudyMaterial")
 SCOPES = ['https://www.googleapis.com/auth/drive']
 AUTH_SERVER_URL = 'https://fedrock.unknownvps.eu.org'  # Update this with your actual server URL
@@ -176,6 +178,13 @@ class StudyMaterialManager(QMainWindow):
         upload_drive_action = QAction(get_icon("cloud-upload"), "Upload to Google Drive", self)
         upload_drive_action.triggered.connect(self.upload_to_drive)
         toolbar.addAction(upload_drive_action)
+
+        update_action = QAction(get_icon("update"), "Check for Updates", self)
+        update_action.triggered.connect(lambda: self.check_for_updates_action())
+        toolbar.addAction(update_action)
+
+    def check_for_updates_action(self):
+        UpdateManager.check_for_updates(VERSION)
 
     def set_modern_theme(self):
         self.setStyleSheet("""
