@@ -8,14 +8,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_tag: ${{ steps.tag.outputs.release_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -25,15 +26,24 @@ jobs:
           pip install google-auth
           pip install google-api-python-client
           pip install requests
+          # Add any other dependencies your project needs
+
       - name: Get current date
         id: date
         run: echo "::set-output name=date::$(date +'%Y.%m.%d')"
+
       - name: Generate release tag
         id: tag
         run: echo "::set-output name=release_tag::v${{ steps.date.outputs.date }}.${{ github.run_number }}"
+
+      - name: Replace version placeholder
+        run: |
+          sed -i "s/__VERSION__/${{ steps.tag.outputs.release_tag }}/g" main.py
+
       - name: Build with Nuitka
         run: |
-          nuitka3 --onefile --enable-plugin=pyqt5 --plugin-enable=pyqt5 --define-string=VERSION=${{ steps.tag.outputs.release_tag }} main.py
+          nuitka3 --onefile --enable-plugin=pyqt5 main.py
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -47,11 +57,10 @@ jobs:
           body: |
             ### 🚀 Release Details
             This release includes compiled executables for both Linux and Windows platforms.
-            **Version:** ${{ steps.tag.outputs.release_tag }}
             **General Overview:**
             - 🛠️ Enhancements to improve performance and stability.
-            - 🔄 Added auto-update functionality.
             **Note:** This build includes both Linux and Windows executables.
+
       - name: Upload Linux Release Asset
         uses: actions/upload-release-asset@v1
         env:
@@ -68,10 +77,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -81,9 +92,16 @@ jobs:
           pip install google-auth
           pip install google-api-python-client
           pip install requests
+          # Add any other dependencies your project needs
+
+      - name: Replace version placeholder
+        run: |
+          (Get-Content -path main.py) -replace '__VERSION__', '${{ needs.build-and-release-linux.outputs.tag_name }}' | Set-Content -path main.py
+
       - name: Build with Nuitka
         run: |
-          python -m nuitka --onefile --enable-plugin=pyqt5 --assume-yes-for-downloads --plugin-enable=pyqt5 --define-string=VERSION=${{ needs.build-and-release-linux.outputs.release_tag }} main.py
+          python -m nuitka --onefile --enable-plugin=pyqt5 --assume-yes-for-downloads main.py
+
       - name: Upload Windows Release Asset
         uses: actions/upload-release-asset@v1
         env:
