@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag_name: ${{ steps.tag.outputs.release_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -60,7 +61,7 @@ jobs:
             **General Overview:**
             - 🛠️ Enhancements to improve performance and stability.
             **Note:** This build includes both Linux and Windows executables.
-
+        
       - name: Upload Linux Release Asset
         uses: actions/upload-release-asset@v1
         env:
@@ -96,7 +97,7 @@ jobs:
 
       - name: Replace version placeholder
         run: |
-          (Get-Content -path main.py) -replace '__VERSION__', '${{ needs.build-and-release-linux.outputs.tag_name }}' | Set-Content -path main.py
+          (Get-Content -Path main.py -Raw) -replace '__VERSION__', '${{ needs.build-and-release-linux.outputs.tag_name }}' | Set-Content -Path main.py
 
       - name: Build with Nuitka
         run: |
