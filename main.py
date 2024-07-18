@@ -58,7 +58,7 @@ class CustomFileSystemModel(QFileSystemModel):
 class StudyMaterialManager(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Study Material Manager")
+        self.setWindowTitle("Fedrock")
         self.setWindowIcon(get_icon('logo'))
         self.setGeometry(100, 100, 1200, 800)
         self.notes = {}
@@ -178,7 +178,7 @@ class StudyMaterialManager(QMainWindow):
         upload_drive_action = QAction(get_icon("cloud-upload"), "Upload to Google Drive", self)
         upload_drive_action.triggered.connect(self.upload_to_drive)
         toolbar.addAction(upload_drive_action)
-
+        
         update_action = QAction(get_icon("update"), "Check for Updates", self)
         update_action.triggered.connect(lambda: self.check_for_updates_action())
         toolbar.addAction(update_action)
