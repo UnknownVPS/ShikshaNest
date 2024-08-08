@@ -101,7 +101,7 @@ jobs:
 
       - name: Build with Nuitka
         run: |
-          python -m pyinstaller --onefile main.py
+          pyinstaller --onefile main.py
 
       - name: Upload Windows Release Asset
         uses: actions/upload-release-asset@v1
